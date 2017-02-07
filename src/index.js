@@ -195,7 +195,7 @@ function denormalizeEntity(entityOrId, entities, schema, bag) {
 export const cache = {};
 
 function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
-  const key = schema.getKey();
+  const key = schema.key
   const { entity, id } = resolveEntityOrId(entityOrId, entities, schema);
 
   if (!entity) {
