@@ -25,6 +25,7 @@ function resolveEntityOrId(entityOrId, entities, schema) {
   if (isObject(entityOrId)) {
     const mutableEntity = isImmutable(entity) ? entity.toJS() : entity;
     id = schema.getId(mutableEntity) || getIn(entity, ['id']);
+    entity = getIn(entities, [key, id]);
   } else {
     entity = getIn(entities, [key, id]);
   }
@@ -59,6 +60,26 @@ function denormalizeIterable(items, entities, schema, bag) {
   return denormalized;
 }
 
+/*
+ * Memoized version of `denormalizeIterable`.
+ */
+function denormalizeIterableMemoized(items, entities, schema, bag) {
+  const itemSchema = Array.isArray(schema) ? schema[0] : schema.schema;
+
+  let isDifferent = false;
+  const newItems = items.map((o, i) => {
+    const newItem = denormalizeMemoized(o, entities, itemSchema, bag);
+
+    if (newItem !== items[i]) {
+      isDifferent = true;
+    }
+
+    return newItem;
+  });
+
+  return isDifferent ? newItems : items;
+}
+
 /**
  * @param   {object|Immutable.Map|number|string} entity
  * @param   {object|Immutable.Map} entities
@@ -76,6 +97,30 @@ function denormalizeUnion(entity, entities, schema, bag) {
 
   return denormalize(
     id,
+    entities,
+    itemSchema,
+    bag,
+  );
+}
+
+/*
+ * Memoized version of `denormalizeUnion`.
+ */
+function denormalizeUnionMemoized(entity, entities, unionSchema, bag) {
+  if (!entity.schema) {
+    throw new Error('Expect `entity` to have a schema key as a result from normalizing an union.');
+  }
+
+  const schemaAttribute = getIn(entity, ['schema']);
+  const itemSchema = getIn(schema, ['schema', schemaAttribute]);
+
+  const id = itemSchema.getId(mutableEntity) || getIn(entity, ['id']);
+
+  // const id = getIn(entity, [itemSchema.getIdAttribute()]);
+  const trueEntity = getIn(entities, [itemSchema.key, id]);
+
+  return denormalizeMemoized(
+    trueEntity,
     entities,
     itemSchema,
     bag,
@@ -147,6 +192,75 @@ function denormalizeEntity(entityOrId, entities, schema, bag) {
   return bag[key][id];
 }
 
+export const cache = {};
+
+function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
+  const key = schema.getKey();
+  const { entity, id } = resolveEntityOrId(entityOrId, entities, schema);
+
+  if (!entity) {
+    return null;
+  }
+
+  /* Cache */
+  if (!cache[key]) {
+    cache[key] = {};
+  }
+  if (!cache[key][id]) {
+    cache[key][id] = {
+      entity,
+      denormalized: entity,
+    };
+  }
+  /* Cache *****/
+
+  if (!bag.hasOwnProperty(`${key}:${id}`)) {
+    bag[`${key}:${id}`] = true;
+
+    /* If cache entity is different, wipe cache */
+    if (cache[key][id].entity !== entity) {
+      cache[key][id].entity = entity;
+      cache[key][id].denormalized = entity;
+    }
+
+    /* Start with the cache as reference */
+    const referenceObject = cache[key][id].denormalized;
+    const relationsToUpdate = {};
+
+    /* For each relation in EntitySchema */
+    Object.keys(schema)
+      /* Filter out private attributes */
+      .filter(attribute => attribute.substring(0, 1) !== '_')
+      /* Filter out relations not present */
+      .filter(attribute => typeof getIn(referenceObject, [attribute]) !== 'undefined')
+      .forEach((relation) => {
+        const item = getIn(referenceObject, [relation]);
+        const itemSchema = getIn(schema, [relation]);
+
+        const denormalizedItem = denormalizeMemoized(item, entities, itemSchema, bag);
+
+        if (denormalizedItem !== item) {
+          relationsToUpdate[relation] = denormalizedItem;
+        }
+      });
+
+    /* If there is any relations to update, we send a new object */
+    let returnObject = referenceObject;
+    if (Object.keys(relationsToUpdate).length > 0) {
+      returnObject = assign({}, returnObject, relationsToUpdate);
+    }
+
+    /* We update the cache */
+    cache[key][id].denormalized = returnObject;
+
+    delete bag[`${key}:${id}`];
+
+    return returnObject;
+  }
+
+  return id;
+}
+
 /**
  * Takes an object, array, or id and returns a denormalized copy of it. For
  * an object or array, the same data type is returned. For an id, an object
@@ -161,7 +275,7 @@ function denormalizeEntity(entityOrId, entities, schema, bag) {
  * @param   {object} bag
  * @returns {object|Immutable.Map|array|Immutable.list}
  */
-export function denormalize(obj, entities, schema, bag = {}) {
+function denormalize(obj, entities, schema, bag = {}) {
   if (obj === null || typeof obj === 'undefined' || !isObject(schema)) {
     return obj;
   }
@@ -182,3 +296,47 @@ export function denormalize(obj, entities, schema, bag = {}) {
   const entity = isImmutable(obj) ? obj : merge({}, obj);
   return denormalizeObject(entity, entities, schema, bag);
 }
+
+/**
+ * Memoized version of `denormalize`.
+ *
+ * `denormalizeMemoized` will return values of previous denormalizations
+ * if nothing changed in the concerned entities.
+ *
+ * The key goal is to be able to provide a quick way to determine
+ * if an entity or its relations changed by using a shallow equality.
+ * This is a performance optimization.
+ *
+ * For example, this would be used on Connected Components in a Redux App.
+ * Connected Components use shallow comparison on their props to know if they
+ * need to be re-renderer or not.
+ *
+ * Without memoization, Components will trigger a re-render everytime
+ * the store changes ; because `denormalize` returns a new object everytime.
+ * With memoization, a new object will be returned only if the underlying entity
+ * and/or its underlying relations have changed.
+ */
+function denormalizeMemoized(obj, entities, schema, bag = {}) {
+  if (obj === null || typeof obj === 'undefined' || !isObject(schema)) {
+    return obj;
+  }
+
+  if (schema instanceof EntitySchema) {
+    return denormalizeEntityMemoized(obj, entities, schema, bag);
+  } else if (schema instanceof IterableSchema) {
+    return denormalizeIterableMemoized(obj, entities, schema, bag);
+  } else if (schema instanceof UnionSchema) {
+    return denormalizeUnionMemoized(obj, entities, schema, bag);
+  }
+
+  return obj;
+}
+
+// eslint-disable-next-line no-undef,func-names
+module.exports.denormalize = function (obj, entities, schema, options = {}) {
+  if (options.memoized) {
+    return denormalizeMemoized(obj, entities, schema, {});
+  }
+
+  return denormalize(obj, entities, schema, {});
+};
