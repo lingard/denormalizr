@@ -238,8 +238,8 @@ function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
       /* Filter out relations not present */
       .filter(attribute => typeof getIn(referenceObject, [attribute]) !== 'undefined')
       .forEach((relation) => {
-        const item = getIn(referenceObject, [attribute]);
-        const itemSchema = getIn(schemaDefinition, [attribute]);
+        const item = getIn(referenceObject, [relation]);
+        const itemSchema = getIn(schemaDefinition, [relation]);
 
         const denormalizedItem = denormalizeMemoized(item, entities, itemSchema, bag);
 
