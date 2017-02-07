@@ -323,7 +323,11 @@ function denormalizeMemoized(obj, entities, schema, bag = {}) {
 
   if (schema instanceof EntitySchema) {
     return denormalizeEntityMemoized(obj, entities, schema, bag);
-  } else if (schema instanceof IterableSchema) {
+  } else if (
+    schema instanceof ValuesSchema ||
+    schema instanceof ArraySchema ||
+    Array.isArray(schema)
+  ) {
     return denormalizeIterableMemoized(obj, entities, schema, bag);
   } else if (schema instanceof UnionSchema) {
     return denormalizeUnionMemoized(obj, entities, schema, bag);
