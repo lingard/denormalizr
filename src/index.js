@@ -1,6 +1,7 @@
 import { schema as Schema } from 'normalizr';
 import merge from 'lodash/merge';
 import isObject from 'lodash/isObject';
+import assign from 'lodash/assign';
 import { isImmutable, getIn, setIn } from './ImmutableUtils';
 
 const EntitySchema = Schema.Entity;
