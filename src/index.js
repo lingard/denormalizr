@@ -198,6 +198,10 @@ function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
   const key = schema.key
   const { entity, id } = resolveEntityOrId(entityOrId, entities, schema);
 
+  const schemaDefinition = typeof schema.inferSchema === 'function'
+    ? schema.inferSchema(obj)
+    : (schema.schema || schema);
+
   if (!entity) {
     return null;
   }
@@ -228,14 +232,14 @@ function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
     const relationsToUpdate = {};
 
     /* For each relation in EntitySchema */
-    Object.keys(schema)
+    Object.keys(schemaDefinition)
       /* Filter out private attributes */
       .filter(attribute => attribute.substring(0, 1) !== '_')
       /* Filter out relations not present */
       .filter(attribute => typeof getIn(referenceObject, [attribute]) !== 'undefined')
       .forEach((relation) => {
-        const item = getIn(referenceObject, [relation]);
-        const itemSchema = getIn(schema, [relation]);
+        const item = getIn(referenceObject, [attribute]);
+        const itemSchema = getIn(schemaDefinition, [attribute]);
 
         const denormalizedItem = denormalizeMemoized(item, entities, itemSchema, bag);
 
@@ -333,7 +337,7 @@ function denormalizeMemoized(obj, entities, schema, bag = {}) {
     return denormalizeUnionMemoized(obj, entities, schema, bag);
   }
 
-  return obj;
+  // return obj;
 }
 
 // eslint-disable-next-line no-undef,func-names
