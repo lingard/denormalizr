@@ -338,7 +338,7 @@ function denormalizeMemoized(obj, entities, schema, bag = {}) {
     return denormalizeUnionMemoized(obj, entities, schema, bag);
   }
 
-  // return obj;
+  return obj;
 }
 
 // eslint-disable-next-line no-undef,func-names
