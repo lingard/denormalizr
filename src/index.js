@@ -196,11 +196,11 @@ function denormalizeEntity(entityOrId, entities, schema, bag) {
 export const cache = {};
 
 function denormalizeEntityMemoized(entityOrId, entities, schema, bag) {
-  const key = schema.key
+  const key = schema.key;
   const { entity, id } = resolveEntityOrId(entityOrId, entities, schema);
 
   const schemaDefinition = typeof schema.inferSchema === 'function'
-    ? schema.inferSchema(obj)
+    ? schema.inferSchema(entityOrId)
     : (schema.schema || schema);
 
   if (!entity) {
